@@ -11,10 +11,6 @@ JSON como base64; con --images-dir además se guardan como ficheros.
 
 Cifrado reconstruido a partir de ficheros de prueba:
     dec = enc ^ s ;  s_nuevo = idx & ((s + (enc | dec)) & 255)
-
-El marcador de bloque de texto enriquecido varía según la variante de v34:
-"-8 1 2" en ficheros re-guardados con el Designer verde y "-8 1 3 1" en los
-exportados directamente. El lector acepta ambos.
 """
 import base64, json, os, re, struct, sys
 
@@ -60,10 +56,8 @@ class Reader:
         return bytes(out)
 
 # ───────────────────────── texto enriquecido + imágenes ─────────────────────────
-# El bloque de texto enriquecido empieza por un marcador que cambia según la
-# variante de v34: "-8 1 2" en los ficheros re-guardados con el Designer verde
-# y "-8 1 3 1" en los exportados directamente. Aceptamos ambos.
-MARK_RE = re.compile(rb'-8 1 [0-9]+(?: [0-9]+)?\r\n')
+MARK = b'-8 1 3 1'
+MARK_RE = re.compile(rb'-8 1 (?:3 1|2)(?=\r\n)')   # marcador nuevo y marcador legado
 BLOCK, LINE = b'\r\n', b') '
 
 FONT_TAGS = {0: ('', ''), 1: ('<b>', '</b>'), 6: ('<u>', '</u>'), 17: ('<i>', '</i>'),
@@ -278,15 +272,26 @@ def parse_question(r, qid, debug):
                 t = variants[4 + 21 * i]
                 x0, y0, x1, y1 = struct.unpack_from('<4i', variants, 4 + 21 * i + 5)
                 kinds.append((t, rect(x0, y0, x1, y1)))
+            drag_rank = {}                      # índice de área -> posición entre los elementos arrastrables
             for i, (t, rc) in enumerate(kinds):
                 if t == 1:
+                    drag_rank[i] = len(items)
                     it = {'index': len(items), 'rect': rc}
                     c = crop(image, rc) if image else None
                     if c: it['image'] = c
                     items.append(it)
             for i, (t, rc) in enumerate(kinds):
                 if t == 2:
-                    targets.append({'index': len(targets), 'rect': rc, 'correctItem': nums[i]})
+                    # la respuesta de un destino es el índice (en la lista completa de áreas)
+                    # del elemento arrastrable correcto; -1 = ninguno
+                    ref = nums[i]
+                    if ref in drag_rank:
+                        correct = drag_rank[ref]
+                    else:
+                        correct = None
+                        if ref != -1:
+                            warnings.append(f'destino {len(targets)} apunta al área {ref}, que no es arrastrable')
+                    targets.append({'index': len(targets), 'rect': rc, 'correctItem': correct})
             q['dragAndDrop'] = {'items': items, 'targets': targets}
             q['correctAnswers'] = [t['correctItem'] for t in targets]
         if qtype not in (2, 9):
