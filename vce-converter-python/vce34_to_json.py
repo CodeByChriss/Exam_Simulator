@@ -11,6 +11,10 @@ JSON como base64; con --images-dir además se guardan como ficheros.
 
 Cifrado reconstruido a partir de ficheros de prueba:
     dec = enc ^ s ;  s_nuevo = idx & ((s + (enc | dec)) & 255)
+
+El marcador de bloque de texto enriquecido varía según la variante de v34:
+"-8 1 2" en ficheros re-guardados con el Designer verde y "-8 1 3 1" en los
+exportados directamente. El lector acepta ambos.
 """
 import base64, json, os, re, struct, sys
 
@@ -56,7 +60,10 @@ class Reader:
         return bytes(out)
 
 # ───────────────────────── texto enriquecido + imágenes ─────────────────────────
-MARK = b'-8 1 3 1'
+# El bloque de texto enriquecido empieza por un marcador que cambia según la
+# variante de v34: "-8 1 2" en los ficheros re-guardados con el Designer verde
+# y "-8 1 3 1" en los exportados directamente. Aceptamos ambos.
+MARK_RE = re.compile(rb'-8 1 [0-9]+(?: [0-9]+)?\r\n')
 BLOCK, LINE = b'\r\n', b') '
 
 FONT_TAGS = {0: ('', ''), 1: ('<b>', '</b>'), 6: ('<u>', '</u>'), 17: ('<i>', '</i>'),
@@ -192,7 +199,7 @@ def parse_rich(section):
 
 
 def rich_sections(blob):
-    return [parse_rich(p) for p in blob.split(MARK)[1:]]
+    return [parse_rich(p) for p in MARK_RE.split(blob)[1:]]
 
 # ───────────────────────── estructura del fichero ─────────────────────────
 TYPE_NAMES = {0: 'single_choice', 1: 'multiple_choice', 2: 'drag_and_drop', 3: 'point_and_shoot',

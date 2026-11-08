@@ -9,7 +9,7 @@
  function status(text,error=false){const el=$('#manager-status');if(el){el.className=error?'notice':'manager-success';el.textContent=text;el.scrollIntoView({block:'nearest'});}}
  function confirm(title,text,go){const m=$('#modal');m.innerHTML=`<form method="dialog"><button class="close-modal" aria-label="Cerrar">×</button><h2>${esc(title)}</h2><p>${esc(text)}</p><div class="modal-actions"><button class="secondary" value="cancel">Cancelar</button><button type="button" class="primary" id="manager-confirm">Confirmar</button></div></form>`;m.showModal();$('#manager-confirm').onclick=()=>{m.close();go();};}
  function leave(go){if(dirty)confirm('¿Descartar los cambios sin guardar?','La pregunta guardada no se modificará.',()=>{dirty=false;go();});else go();}
- function library(){screen='library';dirty=false;const exams=ctx.catalog.list();frame(`<div class="manager-heading"><div><span class="eyebrow">TU ESPACIO DE ESTUDIO</span><h1>Biblioteca de exámenes</h1><p>Crea tus propias baterías y practica con las mismas herramientas.</p></div><div class="manager-actions"><button class="secondary" data-editor-action="refresh">Actualizar biblioteca</button>${ctx.catalog.localCount?.()?`<button class="secondary" data-editor-action="publish-local">Compartir exámenes locales (${ctx.catalog.localCount()})</button>`:""}<button class="secondary" data-editor-action="import">Importar copia</button><button class="primary" data-editor-action="new-exam">+ Crear examen</button><input id="exam-import" type="file" accept=".json,application/json" hidden></div></div><div class="exam-library-grid">${exams.map(e=>`<article class="library-card"><span class="pill ${e.builtin?'neutral':'pass'}">${e.builtin?'Original del PDF':'Examen compartido'}</span><h2>${esc(e.bank.meta.title)}</h2><p>${e.bank.questions.length} preguntas · ${e.bank.meta.totalPoints} puntos</p><p>Corte ${e.bank.meta.passingScore}/1000 · ${e.bank.meta.minutes} min opcionales</p><div class="library-card-actions"><button class="primary" data-editor-action="practice" data-exam="${esc(e.id)}" ${e.bank.questions.length?'':'disabled'}>Practicar →</button><button class="secondary" data-editor-action="detail" data-exam="${esc(e.id)}">${e.builtin?'Ver preguntas':'Editar examen'}</button></div><div class="library-small-actions"><button data-editor-action="duplicate" data-exam="${esc(e.id)}">Duplicar</button><button data-editor-action="share" data-exam="${esc(e.id)}">Copiar enlace</button><button data-editor-action="export" data-exam="${esc(e.id)}">Exportar copia</button>${e.builtin?'':`<button data-editor-action="delete-exam" data-exam="${esc(e.id)}">Eliminar</button>`}</div></article>`).join('')}</div>`);}
+ function library(){screen='library';dirty=false;const exams=ctx.catalog.list();frame(`<div class="manager-heading"><div><span class="eyebrow">TU ESPACIO DE ESTUDIO</span><h1>Biblioteca de exámenes</h1><p>Crea tus propias baterías y practica con las mismas herramientas.</p></div><div class="manager-actions"><button class="secondary" data-editor-action="refresh">Actualizar biblioteca</button>${ctx.catalog.localCount?.()?`<button class="secondary" data-editor-action="publish-local">Compartir exámenes locales (${ctx.catalog.localCount()})</button>`:""}<button class="secondary" data-editor-action="import">Importar copia (JSON)</button><button class="secondary" data-editor-action="import-vce">Importar VCE</button><button class="primary" data-editor-action="new-exam">+ Crear examen</button><input id="exam-import" type="file" accept=".json,application/json" hidden></div></div><div class="exam-library-grid">${exams.map(e=>`<article class="library-card"><span class="pill ${e.builtin?'neutral':'pass'}">${e.builtin?'Original del PDF':'Examen compartido'}</span><h2>${esc(e.bank.meta.title)}</h2><p>${e.bank.questions.length} preguntas · ${e.bank.meta.totalPoints} puntos</p><p>Corte ${e.bank.meta.passingScore}/1000 · ${e.bank.meta.minutes} min opcionales</p><div class="library-card-actions"><button class="primary" data-editor-action="practice" data-exam="${esc(e.id)}" ${e.bank.questions.length?'':'disabled'}>Practicar →</button><button class="secondary" data-editor-action="detail" data-exam="${esc(e.id)}">${e.builtin?'Ver preguntas':'Editar examen'}</button></div><div class="library-small-actions"><button data-editor-action="duplicate" data-exam="${esc(e.id)}">Duplicar</button><button data-editor-action="share" data-exam="${esc(e.id)}">Copiar enlace</button><button data-editor-action="export" data-exam="${esc(e.id)}">Exportar copia</button>${e.builtin?'':`<button data-editor-action="delete-exam" data-exam="${esc(e.id)}">Eliminar</button>`}</div></article>`).join('')}</div>`);}
  function newExam(){const m=$('#modal');m.innerHTML=`<form id="new-exam-form"><button class="close-modal" type="button" data-editor-action="close-modal" aria-label="Cerrar">×</button><h2>Crear examen</h2><label class="editor-field">Nombre del examen<input name="title" required maxlength="150" placeholder="Ej.: Mi examen de SQL"></label><div class="editor-two-cols"><label class="editor-field">Duración en minutos<input name="minutes" type="number" min="1" max="1440" value="120" required></label><label class="editor-field">Corte sobre 1000<input name="passingScore" type="number" min="0" max="1000" value="700" required></label></div><p>El temporizador seguirá siendo opcional al iniciar la sesión.</p><p id="new-exam-error" role="alert"></p><div class="modal-actions"><button class="primary" type="submit">Crear examen</button></div></form>`;m.showModal();$('#new-exam-form').onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('[type=submit]');submit.disabled=true;saving=true;try{const f=new FormData(e.target);examId=await ctx.catalog.add({meta:{title:f.get('title'),minutes:Number(f.get('minutes')),passingScore:Number(f.get('passingScore'))},questions:[]});m.close();detail(examId);}catch(err){$('#new-exam-error').textContent=err.message;}finally{saving=false;if(submit.isConnected)submit.disabled=false;}};}
  function detail(id){examId=id;screen='detail';dirty=false;const e=ctx.catalog.get(id),b=e.bank;frame(`<button class="back-link" data-editor-action="library">← Biblioteca</button><div class="manager-heading"><div><span class="eyebrow">${e.builtin?'ORIGINAL PROTEGIDO':'EXAMEN COMPARTIDO'}</span><h1>${esc(b.meta.title)}</h1><p>${b.questions.length} preguntas · ${b.meta.totalPoints} puntos</p></div><button class="primary" data-editor-action="${e.builtin?'duplicate':'new-question'}" data-exam="${esc(id)}">${e.builtin?'Duplicar para editar':'+ Añadir pregunta'}</button></div>${e.builtin?'<p class="notice">Este examen conserva la transcripción original del PDF. Duplícalo para añadir preguntas o modificar su contenido en tu copia personal.</p>':`<form id="exam-settings" class="exam-settings"><label class="editor-field">Nombre<input name="title" required maxlength="150" value="${esc(b.meta.title)}"></label><label class="editor-field">Minutos<input name="minutes" type="number" min="1" max="1440" required value="${b.meta.minutes}"></label><label class="editor-field">Corte /1000<input name="passingScore" type="number" min="0" max="1000" required value="${b.meta.passingScore}"></label><button class="secondary" type="submit">Guardar ajustes</button></form>`}<div class="manager-question-list">${b.questions.length?b.questions.map(q=>`<div class="manager-question-row"><span class="question-badge">${q.id}</span><div>${q.editorTitle?`<strong>${esc(q.editorTitle)}</strong><small class="question-excerpt">${esc(q.body.map(p=>p.text).join(' ').replace(/\[\[INTERACTION\]\]/g,'').slice(0,160))}</small>`:`<strong>${esc(q.body.map(p=>p.text).join(' ').replace(/\[\[INTERACTION\]\]/g,'').slice(0,160))}</strong>`}<small>${names[q.type]} · ${q.points} punto${q.points===1?'':'s'}</small></div>${e.builtin?'':`<button class="secondary" data-editor-action="edit-question" data-question="${q.id}">Editar</button><button class="text-delete" data-editor-action="delete-question" data-question="${q.id}">Eliminar</button>`}</div>`).join(''):'<div class="empty-history">Añade tu primera pregunta para empezar a practicar.</div>'}</div>`);const form=$('#exam-settings');if(form)form.onsubmit=async ev=>{ev.preventDefault();const submit=form.querySelector("[type=submit]");submit.disabled=true;saving=true;try{const f=new FormData(form);b.meta.title=f.get('title');b.meta.minutes=Number(f.get('minutes'));b.meta.passingScore=Number(f.get('passingScore'));await ctx.catalog.update(id,b);detail(id);status('Ajustes guardados.');}catch(err){status(err.message,true);}finally{saving=false;if(submit.isConnected)submit.disabled=false;}};}
  function seed(type='single'){return {type,editorTitle:'',body:'',caseStudy:'',explanation:'',markdown:true,choices:type==='binary'?[{text:'Yes',correct:false},{text:'No',correct:false}]:[{text:'',correct:false},{text:'',correct:false},{text:'',correct:false},{text:'',correct:false}],pool:'',template:'',targets:Array.from({length:type==='yesno'?3:2},(_,i)=>({label:'',options:'',correct:''}))};}
@@ -62,9 +62,84 @@
   if(a==='delete-question')confirm('¿Eliminar esta pregunta?','Las sesiones ya iniciadas conservarán su versión anterior.',async()=>{try{const bank=ctx.catalog.get(examId).bank;bank.questions=bank.questions.filter(q=>q.id!==Number(b.dataset.question));await ctx.catalog.update(examId,bank);detail(examId);}catch(e){status(e.message,true);}});
   if(a==='export'){const data=ctx.catalog.export(id),url=URL.createObjectURL(new Blob([data],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download=ctx.catalog.get(id).bank.meta.title.replace(/[^a-zA-Z0-9áéíóúñ_-]/g,'_')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status('Copia exportada. Guárdala para recuperar este examen.');}
   if(a==='import')$('#exam-import').click();
+  if(a==='import-vce')vceImport();
   if(a==='load-markdown')$('#markdown-import').click();
   if(a==='add-choice'||a==='remove-choice'){readDraft();if(a==='add-choice'){if(draft.choices.length>=20)throw Error('Se admiten hasta 20 opciones.');draft.choices.push({text:'',correct:false});}else{if(draft.choices.length<=2)throw Error('Conserva al menos dos opciones.');draft.choices.splice(Number(b.dataset.index),1);}dirty=true;questionForm();}
   if(a==='add-target'||a==='remove-target'){readDraft();if(a==='add-target'){if(draft.targets.length>=20)throw Error('Se admiten hasta 20 apartados.');draft.targets.push({label:'',options:'',correct:''});}else{if(draft.targets.length<=1)throw Error('Conserva al menos un apartado.');draft.targets.splice(Number(b.dataset.index),1);}dirty=true;questionForm();}
  }catch(err){status(err.message,true);}finally{if(b.isConnected)b.disabled=false;}});
+ function vceImport(){
+  screen='vce';dirty=false;
+  if(typeof ExamVCE==='undefined'){frame('<button class="back-link" data-editor-action="library">← Biblioteca</button><p class="notice">No se ha podido cargar el módulo de importación VCE. Recarga la página.</p>');return;}
+  const local=location.protocol==='file:';
+  frame(`<button class="back-link" data-editor-action="library">← Biblioteca</button>
+  <div class="manager-heading"><div><span class="eyebrow">IMPORTAR EXAMEN</span><h1>Importar VCE</h1><p>Convierte un examen de VCE Studio (versión 34) y guárdalo en tu biblioteca.</p></div></div>
+  <div class="vce-warning" role="note"><strong>Usa el Designer VERDE de la carpeta Player (versión portable). No uses el Designer azul de clase.</strong><p>Si tienes un .vce creado con el Designer azul, ábrelo con el Designer verde y pulsa <b>Guardar</b>: se convierte automáticamente a v34 (cabecera 85 A8 03 04).</p></div>
+  ${local?'<p class="notice">La importación VCE necesita la web publicada o <code>netlify dev</code>: el conversor de Python y las imágenes no pueden cargarse desde <code>file://</code>.</p>':''}
+  <div id="vce-drop" class="vce-drop" role="button" tabindex="0" aria-label="Arrastra un fichero .vce o pulsa para elegirlo"><span class="vce-drop-icon" aria-hidden="true">⇩</span><strong>Arrastra un .vce aquí</strong><span>o pulsa para elegir un fichero</span><input id="vce-file" type="file" accept=".vce,application/octet-stream" hidden></div>
+  <div id="vce-file-status" class="vce-file" role="status" aria-live="polite"></div>
+  <div class="editor-save-bar"><button class="secondary" type="button" data-editor-action="library">Cancelar</button><button class="primary" id="vce-convert" type="button" disabled>Convertir y crear examen</button></div>
+  <div id="vce-report" class="vce-report" aria-live="polite"></div>`);
+  const drop=$('#vce-drop'),input=$('#vce-file'),statusEl=$('#vce-file-status'),convert=$('#vce-convert'),report=$('#vce-report');
+  let file=null,valid=false,busy=false;
+  const size=n=>n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';
+  function setStatus(name,detail,cls){statusEl.className='vce-file'+(cls?' '+cls:'');statusEl.innerHTML='<strong>'+esc(name)+'</strong><span>'+esc(detail)+'</span>';}
+  function setProgress(text){report.innerHTML='<p class="vce-progress">'+esc(text)+'</p>';}
+  async function accept(candidate){
+   if(busy||!candidate)return;
+   report.innerHTML='';
+   try{
+    const head=await candidate.slice(0,4).arrayBuffer();
+    const result=ExamVCE.detect(new Uint8Array(head));
+    file=candidate;
+    if(result.ok){valid=true;convert.disabled=false;drop.classList.add('valid');drop.classList.remove('invalid');setStatus(candidate.name,'v34 detectada · '+size(candidate.size),'valid');}
+    else{valid=false;convert.disabled=true;drop.classList.add('invalid');drop.classList.remove('valid');setStatus(candidate.name,result.message,'invalid');}
+   }catch(err){file=null;valid=false;convert.disabled=true;drop.classList.add('invalid');drop.classList.remove('valid');setStatus(candidate.name,'No se ha podido leer el fichero.','invalid');}
+  }
+  function reportText(info){
+   const lines=['Preguntas importadas: '+info.imported];
+   if(info.skipped.length)lines.push('Preguntas omitidas: '+info.skipped.length+'\n'+info.skipped.slice(0,20).map(s=>'• '+s.id+' ('+s.type+'): '+s.reason).join('\n')+(info.skipped.length>20?'\n… y '+(info.skipped.length-20)+' más':''));
+   if(info.imagesSkipped)lines.push('Imágenes no incluidas: '+info.imagesSkipped+'. Se añadirán en la siguiente entrega.');
+   if(info.warnings.length)lines.push('Avisos:\n'+info.warnings.slice(0,10).map(w=>'• '+w).join('\n'));
+   return lines.join('\n\n');
+  }
+  function ask(title,text){
+   return new Promise(resolve=>{
+    const modal=$('#modal');let done=false;
+    const finish=value=>{if(done)return;done=true;try{modal.close();}catch(err){}resolve(value);};
+    modal.innerHTML=`<form method="dialog"><button class="close-modal" aria-label="Cerrar" value="cancel">×</button><h2>${esc(title)}</h2><p style="white-space:pre-line;max-height:50vh;overflow:auto">${esc(text)}</p><div class="modal-actions"><button class="secondary" value="cancel">Cancelar</button><button type="button" class="primary" id="vce-confirm-ok">Crear examen</button></div></form>`;
+    modal.addEventListener('close',()=>finish(false),{once:true});
+    modal.showModal();
+    $('#vce-confirm-ok').onclick=()=>finish(true);
+   });
+  }
+  drop.addEventListener('click',()=>{if(!busy)input.click();});
+  drop.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&!busy){event.preventDefault();input.click();}});
+  input.addEventListener('click',event=>event.stopPropagation());
+  input.addEventListener('change',()=>{const chosen=input.files[0];input.value='';if(chosen)accept(chosen);});
+  ['dragenter','dragover'].forEach(name=>drop.addEventListener(name,event=>{event.preventDefault();if(!busy)drop.classList.add('dragover');}));
+  ['dragleave','drop'].forEach(name=>drop.addEventListener(name,event=>{event.preventDefault();drop.classList.remove('dragover');}));
+  drop.addEventListener('drop',event=>{const chosen=event.dataTransfer&&event.dataTransfer.files&&event.dataTransfer.files[0];if(chosen)accept(chosen);});
+  convert.addEventListener('click',async()=>{
+   if(!file||!valid||busy)return;
+   busy=true;convert.disabled=true;drop.classList.add('busy');
+   try{
+    if(location.protocol==='file:')throw Error('La importación VCE necesita la web publicada o netlify dev.');
+    setProgress('Cargando el conversor de Python (solo la primera vez)…');
+    const data=await ExamVCE.convert(file,stage=>setProgress(stage==='convert'?'Convirtiendo el fichero VCE…':'Cargando el conversor de Python (solo la primera vez)…'));
+    setProgress('Preparando el examen…');
+    const result=await ExamVCE.toBank(data,{fileName:file.name});
+    if(!ExamVCE.contentLooksValid(data))result.report.warnings.unshift('La cabecera dice v34, pero el número o el título no parecen legibles. Puede ser una variante distinta de v34; revisa el examen después de crearlo.');
+    if(!result.banks.length){report.innerHTML='<p class="notice" style="white-space:pre-line">No se ha podido crear ningún examen. '+esc(reportText(result.report))+'</p>';return;}
+    if(result.report.skipped.length||result.report.imagesSkipped||result.report.warnings.length){
+     if(!await ask('Revisa la importación',reportText(result.report)))return;
+    }
+    const ids=[];
+    for(const bank of result.banks)ids.push(await ctx.catalog.add(bank));
+    detail(ids[0]);
+    status('Examen importado: '+result.report.imported+' preguntas'+(result.report.skipped.length?' · '+result.report.skipped.length+' omitidas':'')+'.');
+   }catch(err){report.innerHTML='<p class="notice">'+esc(err.message||String(err))+'</p>';}
+   finally{busy=false;convert.disabled=!valid;drop.classList.remove('busy');}
+  });
+ }
  root.ExamEditor={open(options){ctx=options;screen='library';dirty=false;library();}};
 })(globalThis);

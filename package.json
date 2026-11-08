@@ -3,7 +3,7 @@
   "private": true,
   "version": "2.0.0",
   "scripts": {
-    "test": "node --test tests.cjs catalog-tests.cjs markdown-tests.cjs case-study-tests.cjs shared-tests.cjs access-tests.cjs inline-tests.cjs question-title-tests.cjs",
+    "test": "node --test tests.cjs catalog-tests.cjs markdown-tests.cjs case-study-tests.cjs shared-tests.cjs access-tests.cjs inline-tests.cjs question-title-tests.cjs vce-tests.cjs",
     "dev": "netlify dev",
     "deploy": "node scripts/build-functions.mjs && netlify deploy --prod --no-build",
     "build": "node scripts/build-functions.mjs"
