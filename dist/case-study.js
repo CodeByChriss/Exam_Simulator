@@ -1,8 +1,10 @@
 (function(root){
  'use strict';
- const useful=parts=>(parts||[]).filter(p=>typeof p.text==='string'&&p.text.replace(/\[\[INTERACTION\]\]/g,'').trim());
+ const useful=parts=>(parts||[]).filter(p=>p&&(p.kind==='image'||(typeof p.text==='string'&&p.text.replace(/\[\[INTERACTION\]\]/g,'').trim())));
  function at(parts,point){
-  const left=parts.slice(0,point.i),right=parts.slice(point.i+1),p=parts[point.i];
+  const p=parts[point.i];
+  if(!p||typeof p.text!=='string')return [parts.slice(0,point.i),parts.slice(point.i)];
+  const left=parts.slice(0,point.i),right=parts.slice(point.i+1);
   if(point.at>0)left.push({...p,text:p.text.slice(0,point.at)});
   if(point.at<p.text.length)right.unshift({...p,text:p.text.slice(point.at)});
   return [left,right];
@@ -10,6 +12,7 @@
  function find(parts,expression,last=false){
   let found=null;
   for(let i=0;i<parts.length;i++){
+   if(typeof parts[i].text!=='string')continue;
    const re=new RegExp(expression.source,'gm'+(expression.ignoreCase?'i':''));
    for(const m of parts[i].text.matchAll(re)){
     found={i,at:m.index};if(!last)return found;
@@ -20,6 +23,7 @@
  function markdownHeadings(parts){
   let study=null,question=null,fence=null;
   for(let i=0;i<parts.length;i++){
+   if(typeof parts[i].text!=='string')continue;
    let pos=0;
    for(const line of parts[i].text.split('\n')){
     const marker=line.match(/^\s{0,3}(`{3,}|~{3,})/);
@@ -36,6 +40,7 @@
  function split(q){
   const parts=useful(q.body),explicit=useful(q.caseStudy);
   if(explicit.length)return {context:explicit,question:parts};
+  if(!parts.some(p=>typeof p.text==='string'&&p.text.trim()))return {context:[],question:parts};
   if(parts.some(p=>p.kind==='markdown')){
    const h=markdownHeadings(parts);
    if(!h.study||!h.question)return {context:[],question:parts};
@@ -60,7 +65,7 @@
    const duplicated=find(question,/\s+A\. Create a clustered index/);
    if(duplicated){const [task,extra]=at(question,duplicated);question=task;context=context.concat(extra);}
   }
-  const prefixText=prefix.map(p=>p.text).join('').replace(/HOTSPOT|DRAG\s*DROP|[\s-]/gi,'');
+  const prefixText=prefix.map(p=>typeof p.text==='string'?p.text:'').join('').replace(/HOTSPOT|DRAG\s*DROP|[\s-]/gi,'');
   if(prefixText.trim())question=question.concat(prefix);else context=prefix.concat(context);
   return {context:useful(context),question:useful(question)};
  }

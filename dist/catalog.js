@@ -1,7 +1,63 @@
 (function(root){
  'use strict';
- const BASE='dp800-bateria4',KEY='examstudio-library-v1',TYPES=['single','multiple','binary','yesno','drag','dropdown'];
+ const BASE='dp800-bateria4',KEY='examstudio-library-v1',TYPES=['single','multiple','binary','yesno','drag','dropdown','hotarea','imagedrag'];
  const clone=x=>JSON.parse(JSON.stringify(x));
+ const IMAGE_MIMES=['image/jpeg','image/png','image/gif','image/bmp','image/webp'];
+ const ASSET_RE=/^\/assets\/([a-f0-9]{64})\.(jpg|png|gif|bmp|webp)$/;
+ const ASSET_ABS_RE=/^https:\/\/[^/\s]+\/assets\/([a-f0-9]{64})\.(jpg|png|gif|bmp|webp)$/;
+ const SOLUTION_RE=/^(?:solutions\/[a-zA-Z0-9-]+\.png|\/assets\/[a-f0-9]{64}\.(?:jpg|png|gif|bmp|webp))$/;
+ function validImage(image,label){
+  if(!image||typeof image!=='object')throw Error('La imagen '+label+' no tiene un formato válido.');
+  if(image.src!==undefined){
+   if(typeof image.src!=='string'||(!ASSET_RE.test(image.src)&&!ASSET_ABS_RE.test(image.src)))throw Error('La imagen '+label+' no apunta a un recurso válido.');
+  }else if(typeof image.base64==='string'&&image.base64.trim()){
+   if(!IMAGE_MIMES.includes(image.mime))throw Error('La imagen '+label+' no tiene un formato válido.');
+   if(image.base64.length>3000000)throw Error('La imagen '+label+' supera el tamaño máximo permitido.');
+  }else throw Error('La imagen '+label+' no tiene un formato válido.');
+  if(image.mime!==undefined&&!IMAGE_MIMES.includes(image.mime))throw Error('La imagen '+label+' no tiene un formato válido.');
+  if(image.width!==undefined&&(!Number.isInteger(image.width)||image.width<1||image.width>10000))throw Error('El ancho de la imagen '+label+' no es válido.');
+  if(image.height!==undefined&&(!Number.isInteger(image.height)||image.height<1||image.height>10000))throw Error('La altura de la imagen '+label+' no es válida.');
+  if(image.key!==undefined&&(typeof image.key!=='string'||!/^[a-f0-9]{64}$/i.test(image.key)))throw Error('El identificador de la imagen '+label+' no es válido.');
+ }
+ function validRect(rect,label){
+  if(!rect||![rect.x,rect.y,rect.width,rect.height].every(Number.isFinite)||rect.width<=0||rect.height<=0||rect.x<0||rect.y<0)throw Error('La geometría de '+label+' no es válida.');
+ }
+ function insideImage(rect,image,label){
+  if(rect.x+rect.width>image.width||rect.y+rect.height>image.height)throw Error('La geometría de '+label+' sale de la imagen.');
+ }
+ function validateParts(parts,label){
+  if(!Array.isArray(parts))throw Error('El '+label+' no es una lista de contenidos.');
+  parts.forEach((part,i)=>{
+   if(!part||typeof part!=='object')throw Error('El '+label+' contiene un formato no permitido.');
+   if(part.kind==='image')validImage(part.image,label+' ('+(i+1)+')');
+   else if(!['text','transcription','markdown'].includes(part.kind)||typeof part.text!=='string')throw Error('El '+label+' contiene un formato no permitido.');
+  });
+ }
+ function validateSolution(parts){
+  if(!Array.isArray(parts))throw Error('La justificación no es una lista de contenidos.');
+  parts.forEach((part,i)=>{
+   if(!part||typeof part!=='object')throw Error('La justificación contiene un formato no permitido.');
+   if(part.kind==='image'){
+    if(part.src!==undefined){if(typeof part.src!=='string'||!SOLUTION_RE.test(part.src))throw Error('La justificación contiene una imagen no permitida.');}
+    else validImage(part.image,'de la justificación ('+(i+1)+')');
+   }else if(!['text','markdown'].includes(part.kind)||typeof part.text!=='string')throw Error('La justificación contiene un formato no permitido.');
+  });
+ }
+ function validateImageQuestion(q){
+  validImage(q.image,'principal');
+  if(!Number.isInteger(q.image.width)||!Number.isInteger(q.image.height))throw Error('La imagen de la interacción necesita ancho y alto.');
+  if(q.type==='hotarea'){
+   if(!Array.isArray(q.areas)||!q.areas.length||q.areas.length>200||!Array.isArray(q.correct)||!q.correct.length)throw Error('La pregunta hot area necesita zonas y respuestas.');
+   const ids=new Set();q.areas.forEach((area,i)=>{if(!Number.isInteger(area.id)||ids.has(area.id))throw Error('Las zonas hot area deben tener identificadores únicos.');ids.add(area.id);validRect(area,'la zona '+(i+1));insideImage(area,q.image,'la zona '+(i+1));});
+   if(q.correct.some(id=>!ids.has(id))||new Set(q.correct).size!==q.correct.length)throw Error('Las zonas correctas de hot area no son válidas.');
+   if(q.points!==1)throw Error('Hot area vale un punto.');
+  }else{
+   if(!Array.isArray(q.items)||!q.items.length||q.items.length>100||!Array.isArray(q.targets)||!q.targets.length||q.targets.length>100||!Array.isArray(q.correct)||q.correct.length!==q.targets.length)throw Error('La pregunta imagedrag necesita ítems, destinos y respuestas.');
+   const itemIds=new Set();q.items.forEach((item,i)=>{if(!Number.isInteger(item.id)||itemIds.has(item.id))throw Error('Los ítems imagedrag deben tener identificadores únicos.');itemIds.add(item.id);if(item.image)validImage(item.image,'del ítem '+(i+1));if(item.rect!==undefined){validRect(item.rect,'el recorte del ítem '+(i+1));insideImage(item.rect,q.image,'el recorte del ítem '+(i+1));}});
+   const targetIds=new Set();q.targets.forEach((target,i)=>{if(!Number.isInteger(target.id)||targetIds.has(target.id))throw Error('Los destinos imagedrag deben tener identificadores únicos.');targetIds.add(target.id);validRect(target,'el destino '+(i+1));insideImage(target,q.image,'el destino '+(i+1));});
+   if(q.correct.some(id=>id!==null&&(!Number.isInteger(id)||!itemIds.has(id)))||q.points!==q.targets.length)throw Error('Las asignaciones imagedrag no son válidas.');
+  }
+ }
  function validate(bank){
   if(!bank||!bank.meta||typeof bank.meta.title!=='string'||!bank.meta.title.trim()||bank.meta.title.length>150)throw Error('Escribe un nombre de hasta 150 caracteres para el examen.');
   if(!Array.isArray(bank.questions)||bank.questions.length>1000)throw Error('El examen admite hasta 1000 preguntas.');
@@ -12,13 +68,17 @@
    if(!Number.isInteger(q.id)||q.id<1||ids.has(q.id))throw Error('Cada pregunta debe tener un número único.');ids.add(q.id);
    if(q.editorTitle!==undefined&&(typeof q.editorTitle!=='string'||q.editorTitle.length>150))throw Error('El título de la pregunta debe ser un texto de hasta 150 caracteres.');
    if(q.answerMarkdown!==undefined&&typeof q.answerMarkdown!=='boolean')throw Error('Formato de respuestas no válido.');
-   if(!TYPES.includes(q.type)||!Array.isArray(q.body)||!q.body.some(p=>typeof p.text==='string'&&p.text.trim())||!Array.isArray(q.solution))throw Error('Revisa el enunciado y el tipo de la pregunta '+q.id+'.');
-   if(q.body.some(p=>!['text','transcription','markdown'].includes(p.kind)||typeof p.text!=='string'))throw Error('El enunciado debe contener texto o Markdown.');
-   if(q.caseStudy!==undefined&&(!Array.isArray(q.caseStudy)||q.caseStudy.some(p=>!['text','transcription','markdown'].includes(p.kind)||typeof p.text!=='string')))throw Error('El caso de estudio debe contener texto o Markdown.');
-   if(q.solution.some(p=>p.kind==='image'?!/^solutions\/[a-zA-Z0-9-]+\.png$/.test(p.src):!['text','markdown'].includes(p.kind)||typeof p.text!=='string'))throw Error('La justificación contiene un formato no permitido.');
+   if(!TYPES.includes(q.type))throw Error('Revisa el tipo de la pregunta '+q.id+'.');
+   validateParts(q.body,'enunciado de la pregunta '+q.id);
+   const hasBody=q.body.some(part=>part.kind==='image'||(typeof part.text==='string'&&part.text.trim()));
+   if(!hasBody&&q.type!=='hotarea'&&q.type!=='imagedrag')throw Error('Revisa el enunciado de la pregunta '+q.id+'.');
+   if(q.caseStudy!==undefined)validateParts(q.caseStudy,'caso de estudio de la pregunta '+q.id);
+   validateSolution(q.solution);
+   if(q.type==='hotarea'||q.type==='imagedrag'){validateImageQuestion(q);continue;}
    if(!Array.isArray(q.correct)||!q.correct.length)throw Error('Indica la respuesta correcta de la pregunta '+q.id+'.');
    if(['single','multiple','binary'].includes(q.type)){
     if(q.pools||!Array.isArray(q.options)||q.options.length<2||q.options.length>20||new Set(q.options.map(o=>o.id)).size!==q.options.length||q.options.some(o=>typeof o.id!=='string'||!/^[A-T]$/.test(o.id)||typeof o.text!=='string'||!o.text.trim()))throw Error('Añade al menos dos opciones válidas a la pregunta '+q.id+'.');
+    q.options.forEach((option,i)=>{if(option.images!==undefined){if(!Array.isArray(option.images))throw Error('Las imágenes de la opción '+(i+1)+' no son válidas.');option.images.forEach((image,j)=>validImage(image,'de la opción '+(i+1)+' ('+(j+1)+')'));}});
     if(q.correct.some(c=>!q.options.some(o=>o.id===c))||new Set(q.correct).size!==q.correct.length||(q.type!=='multiple'&&q.correct.length!==1))throw Error('Selecciona la respuesta correcta de la pregunta '+q.id+'.');
     if(q.type==='binary'&&q.options.length!==2)throw Error('Yes/No simple necesita dos opciones.');
     if(q.points!==1)throw Error('La elección única o múltiple vale un punto.');

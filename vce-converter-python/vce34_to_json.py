@@ -6,13 +6,14 @@ Uso:
 
 Tipos de pregunta: elección simple/múltiple (con o sin caso de estudio),
 Select and Place (drag and drop) y Hot Area. Las imágenes (la del área y las
-incrustadas en enunciado, caso de estudio, opciones o explicación) van en el
-JSON como base64; con --images-dir además se guardan como ficheros.
+incrustadas en enunciado, caso de estudio, opciones o explicación) se registran
+por SHA-256 y el JSON contiene descriptores {key, mime, width, height}; no se
+incluye base64. Con --images-dir se escriben además los ficheros <sha256>.<ext>.
 
 Cifrado reconstruido a partir de ficheros de prueba:
     dec = enc ^ s ;  s_nuevo = idx & ((s + (enc | dec)) & 255)
 """
-import base64, json, os, re, struct, sys
+import hashlib, json, os, re, struct, sys
 
 try:
     from PIL import Image
@@ -73,6 +74,9 @@ FORMAT_RE = re.compile(rb'^-?\d+( -?\d+){5,9}( ".*")?$')
 IMG_CLASSES = (b'TJPEGImage', b'TPngImage', b'TBitmap', b'TGIFImage', b'TWICImage')
 SIGS = ((b'\xff\xd8\xff', 'image/jpeg'), (b'\x89PNG\r\n\x1a\n', 'image/png'),
         (b'GIF8', 'image/gif'), (b'BM', 'image/bmp'))
+IMAGE_EXT = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif',
+             'image/bmp': 'bmp', 'image/webp': 'webp'}
+IMAGE_REGISTRY = {}          # sha256 -> {'mime','width','height','data'}
 
 
 def mime_of(data):
@@ -82,13 +86,56 @@ def mime_of(data):
     return 'application/octet-stream'
 
 
+def image_size(data):
+    if data.startswith(b'\x89PNG') and len(data) >= 24:
+        return struct.unpack('>II', data[16:24])
+    if data.startswith((b'GIF87a', b'GIF89a')) and len(data) >= 10:
+        return struct.unpack('<HH', data[6:10])
+    if data.startswith(b'BM') and len(data) >= 26:
+        return struct.unpack('<ii', data[18:26])
+    if data.startswith(b'\xff\xd8'):
+        pos = 2
+        while pos + 9 < len(data):
+            if data[pos] != 0xff:
+                pos += 1
+                continue
+            while pos < len(data) and data[pos] == 0xff:
+                pos += 1
+            marker = data[pos]; pos += 1
+            if marker in (0xd8, 0xd9):
+                continue
+            if pos + 2 > len(data):
+                break
+            length = struct.unpack('>H', data[pos:pos + 2])[0]
+            if marker in range(0xc0, 0xc4) and pos + 7 <= len(data):
+                height, width = struct.unpack('>HH', data[pos + 3:pos + 7])
+                return width, height
+            if length < 2:
+                break
+            pos += length
+    return None
+
+
 def make_image(data, **extra):
-    img = {'mime': mime_of(data), 'base64': base64.b64encode(data).decode()}
+    """Registra la imagen por SHA-256 y devuelve solo su descriptor."""
+    key = hashlib.sha256(data).hexdigest()
+    mime = mime_of(data)
+    info = {'mime': mime, 'width': None, 'height': None, 'data': data}
     if Image is not None:
         try:
-            im = Image.open(io.BytesIO(data)); img['width'], img['height'] = im.size
+            im = Image.open(io.BytesIO(data)); info['width'], info['height'] = im.size
         except Exception:
             pass
+    if info['width'] is None:
+        size = image_size(data)
+        if size:
+            info['width'], info['height'] = size
+    IMAGE_REGISTRY[key] = info
+    img = {'key': key, 'mime': mime}
+    if info['width']:
+        img['width'] = info['width']
+    if info['height']:
+        img['height'] = info['height']
     img.update(extra)
     return img
 
@@ -304,6 +351,7 @@ def parse_question(r, qid, debug):
 
 
 def parse(data, debug=False):
+    IMAGE_REGISTRY.clear()
     r = Reader(data)
     if r.take(2) != b'\x85\xa8':
         raise ValueError('No es un fichero .vce')
@@ -344,22 +392,28 @@ def parse(data, debug=False):
     return out
 
 
-def save_images(node, folder, prefix):
-    """Guarda cada imagen en disco y añade el campo 'file'."""
-    if isinstance(node, dict):
-        if 'base64' in node and 'mime' in node:
-            ext = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/bmp': 'bmp'}.get(node['mime'], 'bin')
-            save_images.n += 1
-            name = f'{prefix}_{save_images.n:03d}.{ext}'
-            with open(os.path.join(folder, name), 'wb') as f:
-                f.write(base64.b64decode(node['base64']))
-            node['file'] = name
-        for v in node.values():
-            save_images(v, folder, prefix)
-    elif isinstance(node, list):
-        for v in node:
-            save_images(v, folder, prefix)
-save_images.n = 0
+def save_images(node, folder):
+    """Guarda cada imagen única del registro y añade el campo 'file'."""
+    written = {}
+
+    def walk(value):
+        if isinstance(value, dict):
+            key = value.get('key')
+            if key and 'mime' in value and 'file' not in value and key in IMAGE_REGISTRY:
+                if key not in written:
+                    info = IMAGE_REGISTRY[key]
+                    name = f'{key}.{IMAGE_EXT.get(info["mime"], "bin")}'
+                    with open(os.path.join(folder, name), 'wb') as f:
+                        f.write(info['data'])
+                    written[key] = name
+                value['file'] = written[key]
+            for v in value.values():
+                walk(v)
+        elif isinstance(value, list):
+            for v in value:
+                walk(v)
+
+    walk(node)
 
 
 if __name__ == '__main__':
@@ -375,7 +429,7 @@ if __name__ == '__main__':
     res = parse(open(src, 'rb').read(), '--debug' in argv)
     if img_dir:
         os.makedirs(img_dir, exist_ok=True)
-        save_images(res, img_dir, os.path.splitext(os.path.basename(src))[0])
+        save_images(res, img_dir)
     with open(dst, 'w', encoding='utf-8') as f:
         json.dump(res, f, ensure_ascii=False, indent=2)
     nq = sum(len(e['questions']) for e in res['exams'])

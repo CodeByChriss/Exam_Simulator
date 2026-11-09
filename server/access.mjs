@@ -27,6 +27,9 @@ function screen(request,error=false){
 }
 export async function access(request,next){
  const url=new URL(request.url);
+ // The hashed image URLs are not enumerable and are referenced by shared
+ // exams, so their reads stay public. Uploads still require the cookie.
+ if((request.method==='GET'||request.method==='HEAD')&&(url.pathname.startsWith('/assets/')||url.pathname==='/.netlify/functions/assets'))return next();
  const {password,secret}=settings();
  if(!password||!secret)return new Response('Configura las variables de acceso en el servidor.',{status:503,headers:{'Cache-Control':'no-store'}});
  if(url.pathname==='/__access/login'&&request.method==='POST'){

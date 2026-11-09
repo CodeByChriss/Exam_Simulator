@@ -20,6 +20,16 @@
   }
   function grade(q, answer) {
     const a=Array.isArray(answer)?answer:[];
+    if(q.type==='hotarea'){
+      const expected=new Set(q.correct),selected=new Set(a);
+      const exact=selected.size===expected.size&&[...expected].every(id=>selected.has(id));
+      return {earned:exact?1:0,possible:1,full:exact,parts:[exact]};
+    }
+    if(q.type==='imagedrag'){
+      const parts=q.correct.map((value,i)=>a[i]===value);
+      const earned=parts.filter(Boolean).length;
+      return {earned,possible:q.points,full:earned===q.points,parts};
+    }
     if (q.pools) {
       const parts=q.correct.map((v,i)=>a[i]===v);
       const earned=parts.filter(Boolean).length;
@@ -30,6 +40,8 @@
   }
   function complete(q, a) {
     if (!Array.isArray(a)) return false;
+    if(q.type==='hotarea')return a.length>0&&new Set(a).size===a.length;
+    if(q.type==='imagedrag')return a.length===q.targets.length&&a.every(Number.isInteger);
     if (q.pools) return q.pools.every((p,i)=>Number.isInteger(a[i]) && a[i]>=0 && a[i]<p.length);
     return a.length>0;
   }

@@ -6,3 +6,5 @@ functions-built/
 *.zip
 *.tar.gz
 deno.lock
+__pycache__/
+*.pyc
