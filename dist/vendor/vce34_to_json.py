@@ -12,6 +12,7 @@ incluye base64. Con --images-dir se escriben además los ficheros <sha256>.<ext>
 
 Cifrado reconstruido a partir de ficheros de prueba:
     dec = enc ^ s ;  s_nuevo = idx & ((s + (enc | dec)) & 255)
+    (además, cada 0xF000 bytes dentro de un registro el estado vuelve a valer 128)
 """
 import hashlib, json, os, re, struct, sys
 
@@ -50,7 +51,10 @@ class Reader:
             return bytes(raw)
         out = bytearray()
         for i, enc in enumerate(raw):
-            idx = (5 + i) & 255
+            pos = 5 + i                                # posición dentro del registro
+            if pos % 0xF000 == 0:                      # cada 61440 bytes el estado vuelve a 128
+                s = 128
+            idx = pos & 255
             dec = enc ^ s
             s = idx & ((s + (enc | dec)) & 255)
             out.append(dec)
