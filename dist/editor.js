@@ -231,11 +231,11 @@
    const exams=info.exams||info.examCount||1;
    return `<div class="vce-report-card">
     <div class="vce-report-head"><span class="pill ${skipped.length?'':'pass'}">${skipped.length?'Revisión necesaria':'Importación preparada'}</span><strong>${info.imported} pregunta${info.imported===1?'':'s'} lista${info.imported===1?'':'s'}</strong></div>
-    <p>${exams} examen${exams===1?'':'es'} · ${images} imagen${images===1?'':'es'}${info.imageBytes?' ('+size(info.imageBytes)+')':''}</p>
+    <p>${exams} examen${exams===1?'':'es'} · ${images} ${images===1?'imagen':'imágenes'}${info.imageBytes?' ('+size(info.imageBytes)+')':''}</p>
     ${error?`<p class="vce-report-error" role="alert">${esc(error)}</p>`:''}
     ${skipped.length?`<div class="vce-report-block"><h3>Preguntas omitidas (${skipped.length})</h3><p>Pulsa una entrada para ver el número de pregunta, el tipo, el motivo y los detalles del fichero original.</p><ul class="vce-issues">${skipped.map((issue,index)=>`<li><button type="button" class="vce-issue" data-vce-issue="${index}"><span>Pregunta ${esc(issue.id ?? issue.question ?? '—')} · ${esc(issue.typeLabel||issue.type||'—')}</span><small>${esc(issue.reason||'Sin detalle')}</small></button></li>`).join('')}</ul></div>`:'<p class="vce-report-ok">No se ha omitido ninguna pregunta.</p>'}
     ${warnings.length?`<div class="vce-report-block"><h3>Avisos (${warnings.length})</h3><ul class="vce-warning-list">${warnings.map(warning=>`<li>${esc(warning)}</li>`).join('')}</ul></div>`:''}
-    <div class="vce-report-actions"><button class="primary" type="button" data-vce-create ${prepared&&prepared.banks.length?'':'disabled'}>${images?'Subir '+images+' imagen'+(images===1?'':'es')+' y crear examen':'Crear examen'}</button></div>
+    <div class="vce-report-actions"><button class="primary" type="button" data-vce-create ${prepared&&prepared.banks.length?'':'disabled'}>${images?'Subir '+images+' '+(images===1?'imagen':'imágenes')+' y crear examen':'Crear examen'}</button></div>
     <div id="vce-upload-progress" class="vce-upload-progress" role="status"></div>
    </div>`;
   }

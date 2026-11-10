@@ -137,11 +137,14 @@
      el.addEventListener('pointerdown',e=>{
        if(e.button!==0)return;
        const x=e.clientX,y=e.clientY;let moved=false,ghost=null,over=null;
+        // Conserva el punto por el que se agarró el bloque para que el fantasma
+        // no salte al cursor y siga exactamente el movimiento del ratón.
+        const box=el.getBoundingClientRect(),grabX=e.clientX-box.left,grabY=e.clientY-box.top;
        el.setPointerCapture(e.pointerId);
        function move(ev){
          if(!moved&&Math.hypot(ev.clientX-x,ev.clientY-y)>5){moved=true;ghost=document.createElement('div');ghost.className='drag-ghost';ghost.innerHTML=ExamAnswers.render(q,q.pools[0][Number(el.dataset.drag)]);document.body.appendChild(ghost);}
          if(!moved)return;
-         ghost.style.left=(ev.clientX+12)+'px';ghost.style.top=(ev.clientY+12)+'px';
+         ghost.style.left=(ev.clientX-grabX)+'px';ghost.style.top=(ev.clientY-grabY)+'px';
          const next=document.elementFromPoint(ev.clientX,ev.clientY)?.closest('[data-slot]');
          if(over!==next){over?.classList.remove('drag-over');next?.classList.add('drag-over');over=next;}
        }

@@ -29,6 +29,7 @@
    state.correct = state.correct.slice(0, state.targets.length);
   }
   const status = {text:'', error:false};
+  const history = [];
   let busy = false;
 
   const isHot = () => type === 'hotarea';
@@ -44,6 +45,38 @@
   }
   function emit() {
    if (typeof options.onChange === 'function') options.onChange(getValue());
+  }
+  function snapshot() {
+   return JSON.stringify(getValue());
+  }
+  function checkpoint(before) {
+   if (before === undefined || before === snapshot()) return false;
+   history.push(before);
+   if (history.length > 60) history.shift();
+   return true;
+  }
+  function remember() {
+   history.push(snapshot());
+   if (history.length > 60) history.shift();
+  }
+  function restore(value) {
+   const previous = state.selected;
+   const data = JSON.parse(value);
+   state.image = data.image;
+   state.areas = data.areas;
+   state.items = data.items;
+   state.targets = data.targets;
+   state.correct = data.correct;
+   const list = previous && (previous.kind === 'area' ? state.areas : previous.kind === 'target' ? state.targets : state.items);
+   state.selected = list && list.some(item => item.id === previous.id) ? previous : null;
+   emit();
+   render();
+  }
+  function undo() {
+   const value = history.pop();
+   if (!value) { setStatus('No hay cambios que deshacer.', true); return; }
+   restore(value);
+   setStatus('Cambio deshecho.');
   }
   function setStatus(text, error) {
    status.text = text || '';
@@ -82,10 +115,14 @@
    const height = Math.max(16, Math.round(size.height * (kind === 'item' ? 0.09 : 0.1)));
    return {x:Math.round((size.width - width) / 2), y:Math.round((size.height - height) / 2), width, height};
   }
+  function positionOf(kind, id) {
+   const list = kind === 'area' ? state.areas : kind === 'target' ? state.targets : state.items;
+   const index = list.findIndex(entry => entry.id === id);
+   return index >= 0 ? index + 1 : id + 1;
+  }
   function label(kind, id) {
-   if (kind === 'item') return 'I' + (id + 1);
-   if (kind === 'target') return 'D' + (id + 1);
-   return String(id + 1);
+   const number = positionOf(kind, id);
+   return kind === 'item' ? 'I' + number : kind === 'target' ? 'D' + number : String(number);
   }
   function styleFor(rect) {
    const p = geometry.percent(rect, bounds());
@@ -97,29 +134,51 @@
   function handles() {
    return HANDLES.map(handle => `<span class="geometry-handle ${handle}" data-handle="${handle}" aria-hidden="true"></span>`).join('');
   }
+  function zoneText(kind, item) {
+   const base = label(kind, item.id);
+   if (kind !== 'target') return base;
+   const index = state.targets.findIndex(target => target.id === item.id);
+   const assigned = index >= 0 ? state.correct[index] : null;
+   return assigned === null || assigned === undefined ? `${base} · sin asignar` : `${base} · ${label('item', assigned)}`;
+  }
   function zone(kind, item) {
    const rect = kind === 'item' ? item.rect : item;
    if (!rect || !geometry.validRect(rect)) return '';
    const isSelected = selected(kind, item.id);
    const correct = kind === 'area' && state.correct.includes(item.id);
    const classes = ['geometry-zone', kind, isSelected ? 'selected' : '', correct ? 'correct' : ''].filter(Boolean).join(' ');
-   return `<div class="${classes}" data-zone-kind="${kind}" data-zone-id="${item.id}" style="${styleFor(rect)}" role="button" tabindex="0" aria-label="${kind === 'area' ? 'Zona' : kind === 'target' ? 'Destino' : 'Recorte'} ${item.id + 1}"><span class="geometry-zone-label">${esc(label(kind, item.id))}</span>${isSelected && kind !== 'target' ? handles() : ''}${isSelected && kind === 'target' && state.mode === 'target' ? handles() : ''}</div>`;
+   return `<div class="${classes}" data-zone-kind="${kind}" data-zone-id="${item.id}" style="${styleFor(rect)}" role="button" tabindex="0" aria-label="${kind === 'area' ? 'Zona' : kind === 'target' ? 'Destino' : 'Recorte'} ${positionOf(kind, item.id)}"><span class="geometry-zone-label">${esc(zoneText(kind, item))}</span>${isSelected && kind !== 'target' ? handles() : ''}${isSelected && kind === 'target' && state.mode === 'target' ? handles() : ''}</div>`;
   }
   function thumb(item) {
    const src = imageSrc(item.image);
-   return src ? `<img class="geometry-thumb" src="${esc(src)}" alt="Miniatura del ítem ${item.id + 1}" loading="lazy">` : '<span class="geometry-thumb empty">Sin miniatura</span>';
+   return src ? `<img class="geometry-thumb" src="${esc(src)}" alt="Miniatura del ítem ${positionOf('item', item.id)}" loading="lazy">` : '<span class="geometry-thumb empty">Sin miniatura</span>';
+  }
+  function propsBar() {
+   if (!state.selected) return '<div class="geometry-props"><span class="geometry-props-empty">Selecciona una zona para ver y escribir sus coordenadas exactas.</span></div>';
+   const {kind, id} = state.selected;
+   const rect = getRect(kind, id);
+   if (!rect) return '';
+   const field = (name, text) => `<label>${text}<input type="number" step="1" data-geo-prop="${name}" value="${Math.round(rect[name])}"></label>`;
+   return `<div class="geometry-props" data-geo-props><strong>${esc(label(kind, id))}</strong>${field('x','X')}${field('y','Y')}${field('width','Ancho')}${field('height','Alto')}<span class="geometry-props-note">px de la imagen</span></div>`;
+  }
+  function syncProps(rect) {
+   if (!rect) return;
+   for (const name of ['x','y','width','height']) {
+    const input = host.querySelector(`[data-geo-prop="${name}"]`);
+    if (input && document.activeElement !== input) input.value = Math.round(rect[name]);
+   }
   }
   function side() {
    if (isHot()) {
-    return `<aside class="geometry-side"><h3>Zonas (${state.areas.length})</h3><p>Marca las que forman la respuesta correcta.</p><ul class="geometry-list">${state.areas.map(area => `<li class="${state.correct.includes(area.id) ? 'correct' : ''} ${selected('area', area.id) ? 'selected' : ''}"><button type="button" class="geometry-select" data-geo-select="area" data-id="${area.id}">Zona ${area.id + 1}</button><label class="geometry-check"><input type="checkbox" data-geo-correct="${area.id}" ${state.correct.includes(area.id) ? 'checked' : ''}> Correcta</label><button type="button" class="text-delete" data-geo-delete="area" data-id="${area.id}" aria-label="Eliminar zona ${area.id + 1}">×</button></li>`).join('') || '<li class="geometry-empty-row">Añade una zona o arrastra sobre la imagen.</li>'}</ul></aside>`;
+    return `<aside class="geometry-side"><h3>Zonas (${state.areas.length})</h3><p>Marca las que forman la respuesta correcta.</p><ul class="geometry-list">${state.areas.map((area, index) => `<li class="${state.correct.includes(area.id) ? 'correct' : ''} ${selected('area', area.id) ? 'selected' : ''}"><button type="button" class="geometry-select" data-geo-select="area" data-id="${area.id}">Zona ${index + 1}</button><label class="geometry-check"><input type="checkbox" data-geo-correct="${area.id}" ${state.correct.includes(area.id) ? 'checked' : ''}> Correcta</label><button type="button" class="text-delete" data-geo-delete="area" data-id="${area.id}" aria-label="Eliminar zona ${index + 1}">×</button></li>`).join('') || '<li class="geometry-empty-row">Añade una zona o arrastra sobre la imagen.</li>'}</ul></aside>`;
    }
    return `<aside class="geometry-side">
     <h3>Destinos (${state.targets.length})</h3>
-    <p>Cada destino se asigna a un ítem arrastrable.</p>
-    <ul class="geometry-list">${state.targets.map((target, index) => `<li class="${selected('target', target.id) ? 'selected' : ''}"><button type="button" class="geometry-select" data-geo-select="target" data-id="${target.id}">Destino ${target.id + 1}</button><select data-geo-assign="${index}" aria-label="Ítem del destino ${target.id + 1}">${['<option value="">Sin asignar</option>'].concat(state.items.map(item => `<option value="${item.id}" ${String(state.correct[index]) === String(item.id) ? 'selected' : ''}>Ítem ${item.id + 1}</option>`)).join('')}</select></li>`).join('') || '<li class="geometry-empty-row">Añade un destino o arrastra sobre la imagen.</li>'}</ul>
+    <p>Cada destino se asigna a un ítem arrastrable. El número del destino y del ítem se mantiene alineado con la imagen.</p>
+    <ul class="geometry-list">${state.targets.map((target, index) => `<li class="${selected('target', target.id) ? 'selected' : ''}"><button type="button" class="geometry-select" data-geo-select="target" data-id="${target.id}">Destino ${index + 1}</button><select data-geo-assign="${index}" aria-label="Ítem del destino ${index + 1}">${['<option value="">Sin asignar</option>'].concat(state.items.map((item, itemIndex) => `<option value="${item.id}" ${String(state.correct[index]) === String(item.id) ? 'selected' : ''}>Ítem ${itemIndex + 1}</option>`)).join('')}</select></li>`).join('') || '<li class="geometry-empty-row">Añade un destino o arrastra sobre la imagen.</li>'}</ul>
     <h3>Ítems arrastrables (${state.items.length})</h3>
     <p>Sus recortes salen de la misma imagen. Puedes moverlos y redimensionarlos en el modo <b>Recortes</b>.</p>
-    <ul class="geometry-items">${state.items.map(item => `<li class="${selected('item', item.id) ? 'selected' : ''}">${thumb(item)}<div><strong>Ítem ${item.id + 1}</strong><small>${item.rect ? `${Math.round(item.rect.x)}, ${Math.round(item.rect.y)} · ${Math.round(item.rect.width)}×${Math.round(item.rect.height)}` : 'Sin recorte'}</small></div><div class="geometry-item-actions"><button type="button" class="secondary" data-geo-select="item" data-id="${item.id}">Recorte</button><button type="button" class="secondary" data-geo-regen="${item.id}">Regenerar</button><label class="secondary geometry-file">Imagen<input type="file" accept="image/jpeg,image/png,image/gif,image/bmp,image/webp" data-geo-file="item-image" data-item="${item.id}" hidden></label><button type="button" class="text-delete" data-geo-delete="item" data-id="${item.id}" aria-label="Eliminar ítem ${item.id + 1}">×</button></div></li>`).join('') || '<li class="geometry-empty-row">Añade un ítem para crear su recorte.</li>'}</ul>
+    <ul class="geometry-items">${state.items.map((item, index) => `<li class="${selected('item', item.id) ? 'selected' : ''}">${thumb(item)}<div><strong>Ítem ${index + 1}</strong><small>${item.rect ? `${Math.round(item.rect.x)}, ${Math.round(item.rect.y)} · ${Math.round(item.rect.width)}×${Math.round(item.rect.height)}` : 'Sin recorte'}</small></div><div class="geometry-item-actions"><button type="button" class="secondary" data-geo-select="item" data-id="${item.id}">Recorte</button><button type="button" class="secondary" data-geo-regen="${item.id}">Regenerar</button><label class="secondary geometry-file">Imagen<input type="file" accept="image/jpeg,image/png,image/gif,image/bmp,image/webp" data-geo-file="item-image" data-item="${item.id}" hidden></label><button type="button" class="text-delete" data-geo-delete="item" data-id="${item.id}" aria-label="Eliminar ítem ${index + 1}">×</button></div></li>`).join('') || '<li class="geometry-empty-row">Añade un ítem para crear su recorte.</li>'}</ul>
    </aside>`;
   }
   function render() {
@@ -133,10 +192,12 @@
      <button type="button" class="secondary" data-geo-action="add">${isHot() ? '+ Añadir zona' : '+ Añadir destino'}</button>
      ${isHot() ? '<button type="button" class="secondary" data-geo-action="correct">Marcar / desmarcar correcta</button>' : `<button type="button" class="secondary" data-geo-action="add-item">+ Añadir ítem</button><label class="geometry-mode">Editar<select data-geo-mode><option value="target" ${state.mode === 'target' ? 'selected' : ''}>Destinos</option><option value="item" ${state.mode === 'item' ? 'selected' : ''}>Recortes de ítems</option></select></label>`}
      <button type="button" class="secondary" data-geo-action="delete" ${state.selected ? '' : 'disabled'}>Eliminar seleccionado</button>
+     <button type="button" class="secondary" data-geo-action="undo" ${history.length ? '' : 'disabled'}>Deshacer</button>
      <label class="secondary geometry-file">Cambiar imagen<input type="file" accept="image/jpeg,image/png,image/gif,image/bmp,image/webp" data-geo-file="image" hidden></label>
      <span class="geometry-size">${size.width} × ${size.height} px</span>
     </div>
-    <p class="geometry-help">${isHot() ? 'Arrastra sobre la imagen para dibujar una zona. Mueve desde el interior y usa los tiradores para ajustar.' : state.mode === 'target' ? 'Los destinos verdes se dibujan sobre la imagen. Asigna cada uno a un ítem en la lista.' : 'Arrastra los recortes azules para ajustar de dónde se extrae cada ítem. Después pulsa Regenerar.'}</p>
+     <p class="geometry-help">${isHot() ? 'Arrastra sobre la imagen para dibujar una zona. Mueve desde el interior y usa los tiradores para ajustar.' : state.mode === 'target' ? 'Los destinos verdes se dibujan sobre la imagen. Asigna cada uno a un ítem en la lista.' : 'Arrastra los recortes azules para ajustar de dónde se extrae cada ítem. Después pulsa Regenerar.'}</p>
+     ${propsBar()}
     <div class="geometry-workspace">
      <div class="geometry-board" data-geo-board style="aspect-ratio:${size.width}/${size.height}">
       <img src="${esc(imageSrc(state.image))}" alt="Imagen de la interacción" draggable="false">
@@ -150,11 +211,22 @@
    </div>`;
   }
 
+  // Convierte una posición del puntero a píxeles de la imagen. Se usa el
+  // rectángulo real del lienzo para que el arrastre sea siempre 1:1 con el
+  // movimiento del ratón, incluso si la imagen se muestra reducida.
   function point(event, board) {
    const rect = board.getBoundingClientRect();
    return {
     x:(event.clientX - rect.left) * state.image.width / rect.width,
     y:(event.clientY - rect.top) * state.image.height / rect.height
+   };
+  }
+  function scaleFor(board) {
+   const rect = board.getBoundingClientRect();
+   return {
+    rect,
+    x:state.image.width / Math.max(1, rect.width),
+    y:state.image.height / Math.max(1, rect.height)
    };
   }
   function listen(move, up) {
@@ -163,28 +235,38 @@
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
     document.removeEventListener('pointercancel', onUp);
+    document.body.classList.remove('geometry-dragging');
     up(event);
    };
    document.addEventListener('pointermove', onMove);
    document.addEventListener('pointerup', onUp);
    document.addEventListener('pointercancel', onUp);
+   document.body.classList.add('geometry-dragging');
   }
   function dragRect(event, kind, id, handle) {
    const board = host.querySelector('[data-geo-board]');
    const original = getRect(kind, id);
    if (!board || !original) return;
-   const start = point(event, board);
    const element = host.querySelector(`[data-zone-kind="${kind}"][data-zone-id="${id}"]`);
    const size = bounds();
    if (!element) return;
+   const before = snapshot();
+   const scale = scaleFor(board);
+   // Guardamos el puntero y la escala inicial. Los deltas se calculan siempre
+   // desde ese punto fijo, sin volver a leer el layout en cada movimiento: así
+   // una zona pequeña no se dispara si el navegador desplaza o repinta.
+   const startX = event.clientX, startY = event.clientY;
    listen(moveEvent => {
-    const next = point(moveEvent, board);
-    const dx = next.x - start.x, dy = next.y - start.y;
+    const dx = (moveEvent.clientX - startX) * scale.x;
+    const dy = (moveEvent.clientY - startY) * scale.y;
     const rect = handle ? geometry.resizeRect(original, handle, dx, dy, size) : geometry.moveRect(original, dx, dy, size);
     setRect(kind, id, rect);
     applyStyle(element, rect);
+    syncProps(rect);
+    setStatus(`${handle ? 'Ajustando' : 'Moviendo'} ${kind === 'item' ? 'recorte' : kind === 'target' ? 'destino' : 'zona'} ${positionOf(kind, id)}: ${Math.round(rect.x)}, ${Math.round(rect.y)} · ${Math.round(rect.width)}×${Math.round(rect.height)} px`);
    }, () => {
     setRect(kind, id, geometry.clampRect(geometry.roundRect(getRect(kind, id)), size));
+    checkpoint(before);
     emit();
     render();
    });
@@ -197,6 +279,7 @@
     setStatus('Generando la miniatura del ítem…');
     const crop = await assets.cropImage(imageSrc(state.image), item.rect);
     const uploaded = await assets.uploadBytes(crop.bytes, crop.mime, null, {width:crop.width, height:crop.height});
+    remember();
     item.image = {key:uploaded.key, src:uploaded.src, mime:uploaded.mime, width:crop.width, height:crop.height};
     emit();
     setStatus('Miniatura regenerada.');
@@ -217,6 +300,7 @@
     const uploaded = await assets.uploadBytes(info.bytes, info.mime, null, {width:info.width, height:info.height});
     const previous = bounds() || {width:info.width, height:info.height};
     const next = {width:info.width, height:info.height};
+    remember();
     state.image = {key:uploaded.key, src:uploaded.src, mime:uploaded.mime, width:info.width, height:info.height};
     for (const area of state.areas) Object.assign(area, geometry.roundRect(geometry.scaleRect(area, previous, next)));
     for (const target of state.targets) Object.assign(target, geometry.roundRect(geometry.scaleRect(target, previous, next)));
@@ -247,6 +331,7 @@
    busy = true;
    try {
     const uploaded = await assets.uploadFile(file);
+    remember();
     item.image = uploaded;
     emit();
     setStatus('Miniatura del ítem actualizada.');
@@ -263,6 +348,7 @@
    return list.find(item => item.id === state.selected.id) || null;
   }
   function deleteItem(kind, id) {
+   remember();
    if (kind === 'area') {
     state.areas = state.areas.filter(item => item.id !== id);
     state.correct = state.correct.filter(value => value !== id);
@@ -298,6 +384,7 @@
    const name = action.dataset.geoAction;
    if (name === 'add' || name === 'add-item') {
     const kind = name === 'add-item' ? 'item' : isHot() ? 'area' : 'target';
+    remember();
     const item = kind === 'item' ? {id:nextId('item'), rect:defaultRect('item'), image:null} : {id:nextId(kind), ...defaultRect(kind)};
     if (kind === 'area') state.areas.push(item);
     else if (kind === 'target') { state.targets.push(item); state.correct.push(null); }
@@ -307,8 +394,11 @@
     emit(); render();
    } else if (name === 'delete') {
     if (state.selected) deleteItem(state.selected.kind, state.selected.id);
+   } else if (name === 'undo') {
+    undo();
    } else if (name === 'correct') {
     if (!state.selected || state.selected.kind !== 'area') { setStatus('Selecciona una zona para marcarla como correcta.', true); return; }
+    remember();
     const id = state.selected.id;
     state.correct = state.correct.includes(id) ? state.correct.filter(value => value !== id) : [...state.correct, id];
     emit(); render();
@@ -325,12 +415,14 @@
    if (event.target.matches('[data-geo-assign]')) {
     const index = Number(event.target.dataset.geoAssign);
     const value = event.target.value === '' ? null : Number(event.target.value);
+    remember();
     state.correct[index] = value;
     emit(); render();
     return;
    }
    if (event.target.matches('[data-geo-correct]')) {
     const id = Number(event.target.dataset.geoCorrect);
+    remember();
     state.correct = event.target.checked ? [...new Set([...state.correct, id])] : state.correct.filter(value => value !== id);
     emit(); render();
     return;
@@ -345,6 +437,38 @@
      await replaceItemImage(item, chosen);
     }
    }
+  });
+
+  let propsBefore = null;
+  host.addEventListener('focusin', event => {
+   if (event.target.closest('[data-geo-prop]')) propsBefore = snapshot();
+  });
+  host.addEventListener('input', event => {
+   const input = event.target.closest('[data-geo-prop]');
+   if (!input || !state.selected) return;
+   const {kind, id} = state.selected;
+   const rect = getRect(kind, id);
+   if (!rect) return;
+   const name = input.dataset.geoProp;
+   let value = Number(input.value);
+   if (!Number.isFinite(value)) return;
+   if (name === 'width' || name === 'height') value = Math.max(geometry.MIN, value);
+   const next = {...rect, [name]:value};
+   setRect(kind, id, next);
+   applyStyle(host.querySelector(`[data-zone-kind="${kind}"][data-zone-id="${id}"]`), next);
+   emit();
+  });
+  host.addEventListener('change', event => {
+   const input = event.target.closest('[data-geo-prop]');
+   if (!input || !state.selected) return;
+   const {kind, id} = state.selected;
+   const rect = getRect(kind, id);
+   if (!rect) return;
+   setRect(kind, id, geometry.clampRect(geometry.roundRect(rect), bounds()));
+   checkpoint(propsBefore);
+   propsBefore = null;
+   emit();
+   render();
   });
 
   host.addEventListener('pointerdown', event => {
@@ -374,6 +498,9 @@
    event.preventDefault();
    const kind = isHot() ? 'area' : state.mode === 'item' ? 'item' : 'target';
    const start = point(event, board);
+   const scale = scaleFor(board);
+   const startX = event.clientX, startY = event.clientY;
+   const before = snapshot();
    const rect = geometry.normalizeRect(start, start, bounds());
    const id = nextId(kind);
    const temp = document.createElement('div');
@@ -384,9 +511,14 @@
    temp.setAttribute('style', styleFor(rect));
    board.appendChild(temp);
    listen(moveEvent => {
-    const next = geometry.normalizeRect(start, point(moveEvent, board), bounds());
+    const nextPoint = {
+     x:start.x + (moveEvent.clientX - startX) * scale.x,
+     y:start.y + (moveEvent.clientY - startY) * scale.y
+    };
+    const next = geometry.normalizeRect(start, nextPoint, bounds());
     Object.assign(rect, next);
     applyStyle(temp, rect);
+    setStatus(`Dibujando ${kind === 'item' ? 'recorte' : kind === 'target' ? 'destino' : 'zona'}: ${Math.round(rect.width)}×${Math.round(rect.height)} px`);
    }, () => {
     temp.remove();
     if (rect.width < geometry.MIN || rect.height < geometry.MIN) return;
@@ -397,11 +529,33 @@
     else state.items.push(item);
     state.selected = {kind, id};
     if (kind === 'item') state.mode = 'item';
+    checkpoint(before);
     emit(); render();
    });
   });
 
   host.addEventListener('keydown', event => {
+   if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && !event.target.closest('input,textarea,select')) {
+    event.preventDefault();
+    undo();
+    return;
+   }
+   if (state.selected && !event.target.closest('input,textarea,select')) {
+    const steps = {ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
+    const step = steps[event.key];
+    if (step) {
+     event.preventDefault();
+     const kind = state.selected.kind, id = state.selected.id;
+     const rect = getRect(kind, id);
+     if (!rect) return;
+     const amount = event.shiftKey ? 10 : 1;
+     setRect(kind, id, geometry.roundRect(geometry.moveRect(rect, step[0] * amount, step[1] * amount, bounds())));
+     emit();
+     render();
+     requestAnimationFrame(() => host.querySelector(`[data-zone-kind="${kind}"][data-zone-id="${id}"]`)?.focus());
+     return;
+    }
+   }
    if ((event.key === 'Delete' || event.key === 'Backspace') && state.selected && !event.target.closest('input,textarea,select')) {
     event.preventDefault();
     deleteItem(state.selected.kind, state.selected.id);

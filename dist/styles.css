@@ -139,3 +139,24 @@
 .vce-detail-text pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;background:#f7f9f2;border:1px solid #e0e6d8;border-radius:6px;padding:10px;font:10px/1.7 Consolas,"Courier New",monospace;color:#354e43}
 #modal:has(.vce-detail){max-width:640px}
 @media(max-width:900px){.geometry-workspace{grid-template-columns:1fr}.geometry-side{min-width:0}.geometry-list,.geometry-items{max-height:none}}
+body.geometry-dragging{cursor:grabbing;user-select:none}
+body.geometry-dragging .geometry-zone{cursor:grabbing}
+body.geometry-dragging .geometry-handle{cursor:grabbing}
+.geometry-zone-label{max-width:calc(100% - 6px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.geometry-props{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border:1px solid #dce5d3;background:#fbfdf8;border-radius:6px;padding:6px 8px;font-size:10px;color:var(--muted)}
+.geometry-props strong{font-size:10px;color:var(--green);min-width:26px}
+.geometry-props label{display:flex;gap:4px;align-items:center;font-size:9px;color:var(--muted)}
+.geometry-props input{width:66px;font-size:10px;padding:4px 5px;border:1px solid #cfdbc8;border-radius:4px;background:#fff;color:inherit}
+.geometry-props input:focus{outline:2px solid var(--green);outline-offset:0}
+.geometry-props-note{font-size:9px;color:var(--muted);margin-left:auto}
+.geometry-props-empty{font-size:10px;color:var(--muted);padding:2px 0}
+.geometry-zone:focus-visible{outline:2px solid #1c5d50;outline-offset:2px}
+.geometry-handle{width:11px;height:11px}
+.geometry-handle.nw{left:-6px;top:-6px}
+.geometry-handle.n{left:calc(50% - 5px);top:-6px}
+.geometry-handle.ne{right:-6px;top:-6px}
+.geometry-handle.e{right:-6px;top:calc(50% - 5px)}
+.geometry-handle.se{right:-6px;bottom:-6px}
+.geometry-handle.s{left:calc(50% - 5px);bottom:-6px}
+.geometry-handle.sw{left:-6px;bottom:-6px}
+.geometry-handle.w{left:-6px;top:calc(50% - 5px)}
